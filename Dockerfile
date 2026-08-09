@@ -1,10 +1,6 @@
-# =========================================================
-# SMART HEALTHCARE QUEUE - PRODUCTION DOCKERFILE
-# =========================================================
-
-# =========================================================
+# ==========================================
 # 1. FRONTEND BUILD
-# =========================================================
+# ==========================================
 
 FROM node:20-bookworm-slim AS frontend-builder
 
@@ -20,11 +16,16 @@ COPY shared/ ../shared/
 RUN npm run build
 
 
-# =========================================================
+# ==========================================
 # 2. BACKEND BUILD
-# =========================================================
+# ==========================================
 
 FROM node:20-bookworm-slim AS backend-builder
+
+# Prisma requires OpenSSL
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend
 
@@ -42,93 +43,46 @@ RUN npx prisma@5.22.0 generate
 RUN npm run build
 
 # Show generated files for debugging
-RUN echo "========================================" && \
-    echo "BACKEND DIST CONTENTS" && \
-    echo "========================================" && \
-    find /app/backend/dist -type f && \
-    echo "========================================"
+RUN echo "===== BACKEND DIST CONTENTS =====" \
+    && find /app/backend/dist -type f \
+    && echo "===== END DIST CONTENTS ====="
 
 
-# =========================================================
+# ==========================================
 # 3. PRODUCTION RUNNER
-# =========================================================
+# ==========================================
 
 FROM node:20-bookworm-slim AS runner
+
+# Prisma runtime requires OpenSSL
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# ---------------------------------------------------------
 # Backend package files
-# ---------------------------------------------------------
-
 COPY backend/package*.json ./backend/
 
 # Install production dependencies
 RUN cd backend && npm ci --omit=dev
 
+# Copy compiled backend
+COPY --from=backend-builder /app/backend/dist ./backend/dist
 
-# ---------------------------------------------------------
-# Backend compiled JavaScript
-# ---------------------------------------------------------
+# Copy Prisma schema
+COPY --from=backend-builder /app/backend/prisma ./backend/prisma
 
-COPY --from=backend-builder \
-    /app/backend/dist \
-    ./backend/dist
+# Copy generated Prisma engine
+COPY --from=backend-builder /app/backend/node_modules/.prisma ./backend/node_modules/.prisma
 
-
-# ---------------------------------------------------------
-# Prisma generated engine/client
-# ---------------------------------------------------------
-
-COPY --from=backend-builder \
-    /app/backend/node_modules/.prisma \
-    ./backend/node_modules/.prisma
-
-
-# ---------------------------------------------------------
-# Prisma schema
-# ---------------------------------------------------------
-
-COPY --from=backend-builder \
-    /app/backend/prisma \
-    ./backend/prisma
-
-
-# ---------------------------------------------------------
-# Frontend
-# ---------------------------------------------------------
-
-COPY --from=frontend-builder \
-    /app/frontend/dist \
-    ./frontend/dist
-
-
-# Also place frontend where the compiled server's
-# existing relative path can find it.
-COPY --from=frontend-builder \
-    /app/frontend/dist \
-    ./backend/dist/frontend/dist
-
-
-# ---------------------------------------------------------
-# Port
-# ---------------------------------------------------------
+# Copy frontend build
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 5000
 
-
-# =========================================================
-# START APPLICATION
-# =========================================================
-#
-# Render provides DATABASE_URL through Environment Variables.
-#
-# Prisma creates/updates the PostgreSQL tables before
-# starting the Express server.
-#
-# =========================================================
-
-CMD ["sh", "-c", "npx --yes prisma@5.22.0 db push --skip-generate && node /app/backend/dist/backend/src/server.js"]
+# Initialize/update database and start server
+CMD ["sh", "-c", "cd /app/backend && npx prisma@5.22.0 db push && node /app/backend/dist/backend/src/server.js"]
