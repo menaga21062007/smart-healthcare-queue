@@ -2,7 +2,7 @@
 # 1. Frontend Build Stage
 # ==========================================
 
-FROM node:20-alpine AS frontend-builder
+FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -19,9 +19,14 @@ RUN npm run build
 # 2. Backend Build Stage
 # ==========================================
 
-FROM node:20-alpine AS backend-builder
+FROM node:20-bookworm-slim AS backend-builder
 
 WORKDIR /app/backend
+
+# Prisma requires OpenSSL
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY backend/package*.json ./
 RUN npm ci
@@ -33,39 +38,42 @@ RUN npx prisma generate
 
 RUN npm run build
 
-# Show exactly what TypeScript generated
-RUN echo "===== BACKEND DIST CONTENTS =====" && \
-    find /app/backend/dist -type f && \
-    echo "===== END DIST CONTENTS ====="
+RUN echo "===== BACKEND DIST CONTENTS =====" \
+    && find /app/backend/dist -type f \
+    && echo "===== END DIST CONTENTS ====="
 
 
 # ==========================================
 # 3. Production Stage
 # ==========================================
 
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# Install production dependencies
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Backend package files
 COPY backend/package*.json ./backend/
 
+# Production dependencies
 RUN cd backend && npm ci --omit=dev
 
-# Copy compiled backend
+# Compiled backend
 COPY --from=backend-builder /app/backend/dist ./backend/dist
 
-# Copy Prisma
+# Prisma
 COPY --from=backend-builder /app/backend/node_modules/.prisma ./backend/node_modules/.prisma
 COPY --from=backend-builder /app/backend/prisma ./backend/prisma
 
-# Copy frontend
+# Frontend
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 5000
 
-# Start backend
 CMD ["node", "/app/backend/dist/backend/src/server.js"]
