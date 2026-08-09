@@ -1,12 +1,17 @@
-# ==========================================
-# 1. Frontend Build Stage
-# ==========================================
+# =========================================================
+# SMART HEALTHCARE QUEUE - PRODUCTION DOCKERFILE
+# =========================================================
+
+# =========================================================
+# 1. FRONTEND BUILD
+# =========================================================
 
 FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
+
 RUN npm ci
 
 COPY frontend/ ./
@@ -15,37 +20,38 @@ COPY shared/ ../shared/
 RUN npm run build
 
 
-# ==========================================
-# 2. Backend Build Stage
-# ==========================================
+# =========================================================
+# 2. BACKEND BUILD
+# =========================================================
 
 FROM node:20-bookworm-slim AS backend-builder
 
 WORKDIR /app/backend
 
-# Prisma requires OpenSSL
-RUN apt-get update \
-    && apt-get install -y openssl \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY backend/package*.json ./
+
 RUN npm ci
 
 COPY backend/ ./
 COPY shared/ ../shared/
 
-RUN npx prisma generate
+# Generate Prisma client
+RUN npx prisma@5.22.0 generate
 
+# Build TypeScript
 RUN npm run build
 
-RUN echo "===== BACKEND DIST CONTENTS =====" \
-    && find /app/backend/dist -type f \
-    && echo "===== END DIST CONTENTS ====="
+# Show generated files for debugging
+RUN echo "========================================" && \
+    echo "BACKEND DIST CONTENTS" && \
+    echo "========================================" && \
+    find /app/backend/dist -type f && \
+    echo "========================================"
 
 
-# ==========================================
-# 3. Production Stage
-# ==========================================
+# =========================================================
+# 3. PRODUCTION RUNNER
+# =========================================================
 
 FROM node:20-bookworm-slim AS runner
 
@@ -54,26 +60,75 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5000
 
-RUN apt-get update \
-    && apt-get install -y openssl \
-    && rm -rf /var/lib/apt/lists/*
-
+# ---------------------------------------------------------
 # Backend package files
+# ---------------------------------------------------------
+
 COPY backend/package*.json ./backend/
 
-# Production dependencies
+# Install production dependencies
 RUN cd backend && npm ci --omit=dev
 
-# Compiled backend
-COPY --from=backend-builder /app/backend/dist ./backend/dist
 
-# Prisma
-COPY --from=backend-builder /app/backend/node_modules/.prisma ./backend/node_modules/.prisma
-COPY --from=backend-builder /app/backend/prisma ./backend/prisma
+# ---------------------------------------------------------
+# Backend compiled JavaScript
+# ---------------------------------------------------------
 
+COPY --from=backend-builder \
+    /app/backend/dist \
+    ./backend/dist
+
+
+# ---------------------------------------------------------
+# Prisma generated engine/client
+# ---------------------------------------------------------
+
+COPY --from=backend-builder \
+    /app/backend/node_modules/.prisma \
+    ./backend/node_modules/.prisma
+
+
+# ---------------------------------------------------------
+# Prisma schema
+# ---------------------------------------------------------
+
+COPY --from=backend-builder \
+    /app/backend/prisma \
+    ./backend/prisma
+
+
+# ---------------------------------------------------------
 # Frontend
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+# ---------------------------------------------------------
+
+COPY --from=frontend-builder \
+    /app/frontend/dist \
+    ./frontend/dist
+
+
+# Also place frontend where the compiled server's
+# existing relative path can find it.
+COPY --from=frontend-builder \
+    /app/frontend/dist \
+    ./backend/dist/frontend/dist
+
+
+# ---------------------------------------------------------
+# Port
+# ---------------------------------------------------------
 
 EXPOSE 5000
 
-CMD ["node", "/app/backend/dist/backend/src/server.js"]
+
+# =========================================================
+# START APPLICATION
+# =========================================================
+#
+# Render provides DATABASE_URL through Environment Variables.
+#
+# Prisma creates/updates the PostgreSQL tables before
+# starting the Express server.
+#
+# =========================================================
+
+CMD ["sh", "-c", "npx --yes prisma@5.22.0 db push --skip-generate && node /app/backend/dist/backend/src/server.js"]

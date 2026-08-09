@@ -8,73 +8,106 @@ generator client {
 }
 
 model User {
-  id                String        @id @default(uuid())
-  email             String        @unique
-  passwordHash      String
-  name              String
-  role              String        // PATIENT, RECEPTIONIST, DOCTOR, ADMIN
-  phone             String?
-  avatarUrl         String?
-  createdAt         DateTime      @default(now())
-  doctor            Doctor?
-  appointments      Appointment[]
-  notifications     Notification[]
+  id             String         @id @default(uuid())
+  email          String         @unique
+  passwordHash   String
+  name           String
+  role           String
+  phone          String?
+  avatarUrl      String?
+  createdAt      DateTime       @default(now())
+
+  doctor         Doctor?
+  appointments   Appointment[]
+  notifications  Notification[]
 }
 
 model Doctor {
-  id                String        @id @default(uuid())
-  userId            String        @unique
-  user              User          @relation(fields: [userId], references: [id])
-  specialization    String
-  department        String
-  roomId            String?
-  status            String        @default("AVAILABLE") // AVAILABLE, BUSY, OFF_DUTY
-  patientsServedToday Int         @default(0)
-  appointments      Appointment[]
-  room              Room?         @relation(fields: [roomId], references: [id])
+  id                   String         @id @default(uuid())
+  userId               String         @unique
+  user                 User           @relation(fields: [userId], references: [id])
+
+  specialization       String
+  department           String
+  roomId               String?
+
+  status               String         @default("AVAILABLE")
+  patientsServedToday  Int            @default(0)
+
+  appointments         Appointment[]
+
+  room                 Room?          @relation(
+    fields: [roomId],
+    references: [id]
+  )
 }
 
 model Room {
-  id                String        @id @default(uuid())
-  roomNumber        String        @unique // e.g. "101", "201", "301", "401"
-  floor             Int
-  wing              String
-  category          String        // EMERGENCY, URGENT, PRIORITY, GENERAL
-  doctorType        String
-  isOccupied        Boolean       @default(false)
-  currentTicketId   String?
-  doctors           Doctor[]
-  appointments      Appointment[]
+  id              String         @id @default(uuid())
+  roomNumber      String         @unique
+  floor           Int
+  wing            String
+  category        String
+  doctorType      String
+
+  isOccupied      Boolean        @default(false)
+  currentTicketId String?
+
+  doctors         Doctor[]
+  appointments    Appointment[]
 }
 
 model Appointment {
-  id                   String     @id @default(uuid())
-  ticketNumber         String     @unique // e.g. E-001, U-002, P-001, G-005
+  id                   String      @id @default(uuid())
+
+  ticketNumber         String      @unique
+
   patientId            String
-  patient              User       @relation(fields: [patientId], references: [id])
-  category             String     // EMERGENCY, URGENT, PRIORITY, GENERAL
+  patient              User        @relation(
+    fields: [patientId],
+    references: [id]
+  )
+
+  category             String
   symptoms             String
-  triageScore          Int        // 1 to 4
-  status               String     @default("WAITING") // WAITING, CALLED, IN_CONSULTATION, COMPLETED, CANCELLED
+  triageScore          Int
+
+  status               String      @default("WAITING")
+
   doctorId             String?
-  doctor               Doctor?    @relation(fields: [doctorId], references: [id])
+  doctor               Doctor?     @relation(
+    fields: [doctorId],
+    references: [id]
+  )
+
   roomId               String?
-  room                 Room?      @relation(fields: [roomId], references: [id])
+  room                 Room?       @relation(
+    fields: [roomId],
+    references: [id]
+  )
+
   estimatedWaitMinutes Int
   qrCodeData           String
-  createdAt            DateTime   @default(now())
+
+  createdAt            DateTime    @default(now())
   checkedInAt          DateTime?
   calledAt             DateTime?
   completedAt          DateTime?
 }
 
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  title     String
-  message   String
-  type      String   @default("INFO")
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          String    @id @default(uuid())
+
+  userId      String
+  user        User      @relation(
+    fields: [userId],
+    references: [id]
+  )
+
+  title       String
+  message     String
+  type        String    @default("INFO")
+  read        Boolean   @default(false)
+
+  createdAt   DateTime  @default(now())
 }
