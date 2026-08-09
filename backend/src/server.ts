@@ -70,8 +70,33 @@ app.get('/api/health', (req, res) => {
 // FRONTEND STATIC FILES
 // ==========================================
 
-const frontendDistPath = path.join(__dirname, '../../frontend/dist');
+// Docker production structure:
+//
+// /app
+// ├── backend
+// │   └── dist
+// │       └── backend
+// │           └── src
+// │               └── server.js
+// │
+// └── frontend
+//     └── dist
+//         └── index.html
+//
+// process.cwd() is /app because the Dockerfile
+// uses WORKDIR /app.
 
+const frontendDistPath = path.join(
+  process.cwd(),
+  'frontend',
+  'dist'
+);
+
+console.log('==========================================');
+console.log('Frontend directory:', frontendDistPath);
+console.log('==========================================');
+
+// Serve frontend static files
 app.use(express.static(frontendDistPath));
 
 // ==========================================
@@ -79,26 +104,48 @@ app.use(express.static(frontendDistPath));
 // ==========================================
 
 app.get('*', (req, res, next) => {
-  // Don't intercept API or Socket.IO requests
-  if (
-    req.path.startsWith('/api') ||
-    req.path.startsWith('/socket.io')
-  ) {
+  // Never intercept API requests
+  if (req.path.startsWith('/api')) {
     return next();
   }
 
-  res.sendFile(
-    path.join(frontendDistPath, 'index.html'),
-    (err) => {
-      if (err) {
-        res
-          .status(404)
-          .send(
-            'CareQueue AI API Server active. Build frontend dist to view UI.'
-          );
-      }
-    }
+  // Never intercept Socket.IO requests
+  if (req.path.startsWith('/socket.io')) {
+    return next();
+  }
+
+  const indexPath = path.join(
+    frontendDistPath,
+    'index.html'
   );
+
+  console.log('Serving frontend:', indexPath);
+
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error(
+        '=========================================='
+      );
+
+      console.error(
+        'ERROR: Could not find frontend index.html'
+      );
+
+      console.error(
+        'Expected path:',
+        indexPath
+      );
+
+      console.error(
+        '=========================================='
+      );
+
+      res.status(404).send(
+        'Frontend build not found. Expected: ' +
+          indexPath
+      );
+    }
+  });
 });
 
 // ==========================================
@@ -106,7 +153,12 @@ app.get('*', (req, res, next) => {
 // ==========================================
 
 server.listen(CONFIG.PORT, () => {
+  console.log('==========================================');
   console.log(
     `🚀 Smart Healthcare Server running on port ${CONFIG.PORT}`
   );
+  console.log(
+    `🌐 Frontend directory: ${frontendDistPath}`
+  );
+  console.log('==========================================');
 });
