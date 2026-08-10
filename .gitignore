@@ -1,9 +1,34 @@
-node_modules/
-dist/
+# Environment variables
 .env
-.env.*
-!.env.example
-*.log
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
 
-backend/prisma/dev.db
-backend/prisma/*.db-journal
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.output/
+.vercel/
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
