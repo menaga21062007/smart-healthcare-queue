@@ -1,6 +1,6 @@
 import { User, Appointment, RoomItem, AnalyticsSummary } from '../types';
 
-const API_BASE = '/api';
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 
 export class ApiService {
   private static getHeaders(token?: string) {
@@ -12,25 +12,39 @@ export class ApiService {
     return headers;
   }
 
+  private static async handleResponse<T>(res: Response): Promise<T> {
+    const text = await res.text();
+    let data: any = null;
+    if (text && text.trim().length > 0) {
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        data = { message: text };
+      }
+    }
+
+    if (!res.ok) {
+      const errorMsg = data?.message || `HTTP ${res.status}: ${res.statusText || 'API Request Failed'}`;
+      throw new Error(errorMsg);
+    }
+
+    return data as T;
+  }
+
   static async login(email: string, password: string): Promise<{ token: string; user: User }> {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Login failed');
-    }
-    return res.json();
+    return this.handleResponse<{ token: string; user: User }>(res);
   }
 
   static async getMe(): Promise<User> {
     const res = await fetch(`${API_BASE}/auth/me`, {
       headers: this.getHeaders()
     });
-    if (!res.ok) throw new Error('Unauthorized');
-    return res.json();
+    return this.handleResponse<User>(res);
   }
 
   static async bookAppointment(data: {
@@ -45,25 +59,24 @@ export class ApiService {
       headers: this.getHeaders(),
       body: JSON.stringify(data)
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Failed to book appointment');
-    }
-    return res.json();
+    return this.handleResponse<Appointment>(res);
   }
 
   static async getLiveQueue(): Promise<Appointment[]> {
     const res = await fetch(`${API_BASE}/queue/live`);
-    if (!res.ok) throw new Error('Failed to fetch live queue');
-    return res.json();
+    return this.handleResponse<Appointment[]>(res);
   }
 
   static async getMyTicket(): Promise<Appointment | null> {
-    const res = await fetch(`${API_BASE}/queue/my-ticket`, {
-      headers: this.getHeaders()
-    });
-    if (!res.ok) return null;
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE}/queue/my-ticket`, {
+        headers: this.getHeaders()
+      });
+      if (!res.ok) return null;
+      return await this.handleResponse<Appointment>(res);
+    } catch {
+      return null;
+    }
   }
 
   static async callNextTicket(doctorId?: string, roomNumber?: string): Promise<any> {
@@ -72,11 +85,7 @@ export class ApiService {
       headers: this.getHeaders(),
       body: JSON.stringify({ doctorId, roomNumber })
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Failed to call ticket');
-    }
-    return res.json();
+    return this.handleResponse<any>(res);
   }
 
   static async updateAppointmentStatus(id: string, status: string): Promise<Appointment> {
@@ -85,8 +94,7 @@ export class ApiService {
       headers: this.getHeaders(),
       body: JSON.stringify({ status })
     });
-    if (!res.ok) throw new Error('Failed to update status');
-    return res.json();
+    return this.handleResponse<Appointment>(res);
   }
 
   static async emergencyOverride(patientName: string, symptoms?: string): Promise<Appointment> {
@@ -95,14 +103,12 @@ export class ApiService {
       headers: this.getHeaders(),
       body: JSON.stringify({ patientName, symptoms })
     });
-    if (!res.ok) throw new Error('Emergency override failed');
-    return res.json();
+    return this.handleResponse<Appointment>(res);
   }
 
   static async getRooms(): Promise<RoomItem[]> {
     const res = await fetch(`${API_BASE}/rooms`);
-    if (!res.ok) throw new Error('Failed to fetch rooms');
-    return res.json();
+    return this.handleResponse<RoomItem[]>(res);
   }
 
   static async toggleRoom(id: string): Promise<RoomItem> {
@@ -110,13 +116,11 @@ export class ApiService {
       method: 'PATCH',
       headers: this.getHeaders()
     });
-    if (!res.ok) throw new Error('Failed to toggle room');
-    return res.json();
+    return this.handleResponse<RoomItem>(res);
   }
 
   static async getAnalyticsSummary(): Promise<AnalyticsSummary> {
     const res = await fetch(`${API_BASE}/analytics/summary`);
-    if (!res.ok) throw new Error('Failed to fetch analytics');
-    return res.json();
+    return this.handleResponse<AnalyticsSummary>(res);
   }
 }
