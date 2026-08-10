@@ -2,6 +2,7 @@
 # Stage 1: Build Frontend
 # ==========================================
 FROM node:20-bookworm-slim AS frontend-builder
+
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
@@ -9,15 +10,21 @@ RUN npm ci
 
 COPY frontend/ ./
 COPY shared/ ../shared/
+
 RUN npm run build
 
+
 # ==========================================
-# Stage 2: Build Backend & Generate Prisma
+# Stage 2: Build Backend
 # ==========================================
 FROM node:20-bookworm-slim AS backend-builder
-WORKDIR /app/backend
 
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL for Prisma
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/backend
 
 COPY backend/package*.json ./
 RUN npm ci
@@ -25,28 +32,48 @@ RUN npm ci
 COPY backend/ ./
 COPY shared/ ../shared/
 
-ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+# Generate Prisma Client
 RUN npx prisma@5.22.0 generate
 
-# Build backend if using TypeScript compilation
-RUN if [ -f "tsconfig.json" ]; then npm run build; fi
+# IMPORTANT: Build TypeScript backend
+RUN npm run build
 
-# Stage 3: Production Runner Image
+
+# ==========================================
+# Stage 3: Production Runner
+# ==========================================
 FROM node:20-bookworm-slim AS runner
-WORKDIR /app/backend
 
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY backend/package*.json ./
-RUN npm ci --omit=dev
-
-COPY --from=backend-builder /app/backend ./
-COPY --from=backend-builder /app/shared ../shared
-
-# 💡 Explicitly copy frontend build into /app/backend/frontend/dist
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+WORKDIR /app
 
 ENV NODE_ENV=production
+
+# Backend package files
+COPY backend/package*.json ./backend/
+
+# Production dependencies
+RUN cd backend && npm ci --omit=dev
+
+# Copy compiled backend
+COPY --from=backend-builder /app/backend/dist ./backend/dist
+
+# Copy Prisma files and generated client
+COPY --from=backend-builder /app/backend/prisma ./backend/prisma
+
+# Copy frontend production build
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+# Copy shared files if required at runtime
+COPY --from=backend-builder /app/shared ./shared
+
+WORKDIR /app/backend
+
+ENV PORT=10000
+
 EXPOSE 10000
 
-CMD ["npm", "start"]
+CMD ["node", "dist/server.js"]
