@@ -19,4 +19,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString(), service: 'CareQueue AI Vercel Serverless Engine' });
 });
 
+// Global Serverless Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Vercel Serverless Function Error:', err);
+  res.status(500).json({ message: err.message || 'Serverless function error handled' });
+});
+
 export default app;
