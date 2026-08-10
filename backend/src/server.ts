@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 
@@ -15,10 +16,7 @@ import analyticsRoutes from './routes/analyticsRoutes';
 const app = express();
 const server = http.createServer(app);
 
-// ==========================================
 // CORS
-// ==========================================
-
 app.use(
   cors({
     origin: CONFIG.CORS_ORIGIN,
@@ -26,16 +24,10 @@ app.use(
   })
 );
 
-// ==========================================
-// JSON BODY PARSER
-// ==========================================
-
+// Body Parser
 app.use(express.json());
 
-// ==========================================
-// SOCKET.IO
-// ==========================================
-
+// Socket.IO
 const io = new SocketIOServer(server, {
   cors: {
     origin: '*',
@@ -45,19 +37,13 @@ const io = new SocketIOServer(server, {
 
 initSockets(io);
 
-// ==========================================
-// API ROUTES
-// ==========================================
-
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/queue', queueRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// ==========================================
-// HEALTH CHECK
-// ==========================================
-
+// Health Check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -66,99 +52,44 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ==========================================
-// FRONTEND STATIC FILES
-// ==========================================
+// Robust Frontend Static Path Resolver
+const potentialPaths = [
+  path.join(process.cwd(), '../frontend/dist'),
+  path.join(process.cwd(), 'frontend/dist'),
+  path.join(__dirname, '../../frontend/dist'),
+  path.join(__dirname, '../../../frontend/dist'),
+  path.join(__dirname, '../frontend/dist')
+];
 
-// Docker production structure:
-//
-// /app
-// ├── backend
-// │   └── dist
-// │       └── backend
-// │           └── src
-// │               └── server.js
-// │
-// └── frontend
-//     └── dist
-//         └── index.html
-//
-// process.cwd() is /app because the Dockerfile
-// uses WORKDIR /app.
-
-const frontendDistPath = path.join(
-  process.cwd(),
-  'frontend',
-  'dist'
-);
+const frontendDistPath = potentialPaths.find(p => fs.existsSync(path.join(p, 'index.html'))) || potentialPaths[0];
 
 console.log('==========================================');
-console.log('Frontend directory:', frontendDistPath);
+console.log('Resolved Frontend directory:', frontendDistPath);
 console.log('==========================================');
 
 // Serve frontend static files
 app.use(express.static(frontendDistPath));
 
-// ==========================================
-// FRONTEND SPA FALLBACK
-// ==========================================
-
+// Frontend SPA Fallback
 app.get('*', (req, res, next) => {
-  // Never intercept API requests
-  if (req.path.startsWith('/api')) {
+  if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
     return next();
   }
 
-  // Never intercept Socket.IO requests
-  if (req.path.startsWith('/socket.io')) {
-    return next();
-  }
-
-  const indexPath = path.join(
-    frontendDistPath,
-    'index.html'
-  );
-
-  console.log('Serving frontend:', indexPath);
+  const indexPath = path.join(frontendDistPath, 'index.html');
 
   res.sendFile(indexPath, (err) => {
     if (err) {
-      console.error(
-        '=========================================='
-      );
-
-      console.error(
-        'ERROR: Could not find frontend index.html'
-      );
-
-      console.error(
-        'Expected path:',
-        indexPath
-      );
-
-      console.error(
-        '=========================================='
-      );
-
-      res.status(404).send(
-        'Frontend build not found. Expected: ' +
-          indexPath
-      );
+      console.error('ERROR: Could not find frontend index.html at', indexPath);
+      res.status(404).send('Frontend build index.html not found. Path searched: ' + indexPath);
     }
   });
 });
 
-// ==========================================
-// START SERVER
-// ==========================================
-
+// Start Server
 server.listen(CONFIG.PORT, () => {
   console.log('==========================================');
-  console.log(
-    `🚀 Smart Healthcare Server running on port ${CONFIG.PORT}`
-  );
-  console.log(
-    `🌐 Frontend directory: ${frontendDistPath}`
-  );
+  console.log(`🚀 Smart Healthcare Server running on port ${CONFIG.PORT}`);
+  console.log(`🌐 Frontend directory: ${frontendDistPath}`);
   console.log('==========================================');
 });
